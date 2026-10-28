@@ -26,23 +26,32 @@
 xcc-embed-202401-2411020054/
 ├── README.md              # 本文件：姓名、班级、学号 + 课程实验总说明
 ├── .gitignore             # 过滤 Keil / STM32CubeIDE 编译中间产物
-└── labXX_名称/            # 后续每次实验新建一个文件夹（含 src/ + doc/ + screenshots/）
+└── lab01_led/             # 实验一：LED 流水灯
+    ├── README.md          # 实验说明与结果记录
+    ├── Core/              # 用户代码（main.c、gpio.c 等）
+    ├── Drivers/           # CMSIS + STM32F4xx HAL 驱动库
+    ├── Startup/           # 启动文件
+    ├── docs/              # 时序图与辅助脚本
+    └── screenshots/       # 现象截图
 ```
 
 ## 三、实验进度
 
-目前仓库中暂无实验目录。后续每完成一个实验，按 `labXX_名称` 新建文件夹（例如 `lab01_led`），
-在其中放入 `src/`（工程源码）、`doc/`（实验报告）、`screenshots/`（现象截图）。
+| 实验 | 内容 | 状态 | 目录 |
+| --- | --- | --- | --- |
+| 实验一 | LED 流水灯 | 已完成 | [`lab01_led`](lab01_led/) |
 
 ## 四、单个实验文件夹的内容约定
 
-每个 `labXX_名称` 文件夹内固定包含三部分：
+每个 `labXX_名称` 文件夹是一个**完整的 STM32CubeIDE 工程**（含 `.ioc`、`.cproject`），
+可直接导入 CubeIDE 编译下载；除此之外固定包含：
 
-| 目录 | 存放内容 |
+| 路径 | 存放内容 |
 | --- | --- |
-| `src/` | 工程源码（Keil / STM32CubeIDE 工程，或核心源文件） |
-| `doc/` | 实验报告（`.docx` / `.pdf` / `.md`） |
-| `screenshots/` | 开发板运行现象、串口输出、示波器波形等截图 |
+| `README.md` | 实验目的、原理、关键代码、实验结果与总结 |
+| `Core/`、`Drivers/`、`Startup/` | 工程源码与 HAL 驱动库 |
+| `screenshots/` | 开发板运行现象截图 |
+| `docs/` | 时序图、辅助脚本等补充材料 |
 
 ## 五、提交规范
 
