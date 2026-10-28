@@ -26,13 +26,15 @@
 xcc-embed-202401-2411020054/
 ├── README.md              # 本文件：姓名、班级、学号 + 课程实验总说明
 ├── .gitignore             # 过滤 Keil / STM32CubeIDE 编译中间产物
-└── lab01_led/             # 实验一：LED 流水灯
-    ├── README.md          # 实验说明与结果记录
-    ├── Core/              # 用户代码（main.c、gpio.c 等）
-    ├── Drivers/           # CMSIS + STM32F4xx HAL 驱动库
-    ├── Startup/           # 启动文件
-    ├── docs/              # 时序图与辅助脚本
-    └── screenshots/       # 现象截图
+├── lab01_led/             # 实验一：LED 流水灯
+│   ├── README.md          # 实验说明与结果记录
+│   ├── Core/              # 用户代码（main.c、gpio.c 等）
+│   ├── Drivers/           # CMSIS + STM32F4xx HAL 驱动库
+│   ├── Startup/           # 启动文件
+│   ├── docs/              # 时序图与辅助脚本
+│   └── screenshots/       # 现象截图
+└── lab02_matrixkey/       # 实验二：3×4 矩阵键盘
+    └── ...（结构同 lab01_led）
 ```
 
 ## 三、实验进度
@@ -40,6 +42,7 @@ xcc-embed-202401-2411020054/
 | 实验 | 内容 | 状态 | 目录 |
 | --- | --- | --- | --- |
 | 实验一 | LED 流水灯 | 已完成 | [`lab01_led`](lab01_led/) |
+| 实验二 | 3×4 矩阵键盘 | 已完成 | [`lab02_matrixkey`](lab02_matrixkey/) |
 
 ## 四、单个实验文件夹的内容约定
 
