@@ -2,13 +2,16 @@
 /**
   ******************************************************************************
   * @file           : main.c
-  * @brief          : 实验一：LED 往返流水灯
+  * @brief          : Main program body
   ******************************************************************************
   * @attention
   *
-  * 主循环只做一件事：调用 LED_Effect_Task()。
-  * 流水灯的节拍、方向、端口操作全部封装在 led_effect.c 里，
-  * 以后要加按键、串口打印等功能，直接往 while(1) 里加任务即可。
+  * Copyright (c) 2026 STMicroelectronics.
+  * All rights reserved.
+  *
+  * This software is licensed under terms that can be found in the LICENSE file
+  * in the root directory of this software component.
+  * If no LICENSE file comes with this software, it is provided AS-IS.
   *
   ******************************************************************************
   */
@@ -19,6 +22,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "bsp_led.h"
 #include "led_effect.h"
 /* USER CODE END Includes */
 
@@ -60,6 +64,7 @@ void SystemClock_Config(void);
   */
 int main(void)
 {
+
   /* USER CODE BEGIN 1 */
 
   /* USER CODE END 1 */
@@ -83,15 +88,19 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   /* USER CODE BEGIN 2 */
-  LED_Effect_Init();
+  LED_Init();          /* LED 引脚初始化（保证上电全灭） */
+  LedEffect_Init();    /* 载入第一种流水灯花样           */
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    /* 非阻塞：没到时间片会立刻返回，不影响后面继续加任务 */
-    LED_Effect_Task();
+    /* 非阻塞花样引擎：每次调用只做一次"到时间了吗"的判断，
+       没到节拍立即返回，主循环不会停在这里等延时。
+       因此后面可以随时追加其它任务，例如：
+           KEY_Task();  UART_Task();  ADC_Task();   ……      */
+    LedEffect_Task();
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -146,6 +155,14 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
+/*
+ * 说明：原代码里的 "delay(24000000)" 空循环延时不推荐使用，原因有三：
+ *   1) 延时时间由编译器的优化等级决定，-O0 和 -O1 下能差好几倍；
+ *   2) 延时期间 CPU 完全空转，什么都干不了；
+ *   3) 循环次数是 "凑" 出来的，换个主频就不准。
+ * 现在统一改用 HAL_GetTick()（SysTick 1ms 计数）做时间基准，
+ * 时间误差只取决于晶振精度，并且延时期间主循环照常运行。
+ */
 
 /* USER CODE END 4 */
 

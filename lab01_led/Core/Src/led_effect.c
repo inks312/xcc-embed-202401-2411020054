@@ -1,101 +1,179 @@
 /**
   ******************************************************************************
   * @file    led_effect.c
-  * @brief   实验一：LED 往返流水灯效果
-  *
-  * 设计要点：
-  *   1. 用 BSRR 寄存器一次性完成"点亮一个 + 熄灭其余"，写操作是原子的，
-  *      不会出现先灭后亮的中间态（直接写 ODR 是整端口覆盖，有这个隐患）。
-  *   2. 计时用 HAL_GetTick()（SysTick 中断维护），不依赖空循环，
-  *      换编译优化等级或改主频都不会让节奏跑偏。
-  *   3. 效果改成"往返"：0→7 再从 7→0，视觉上连成一个循环，
-  *      不会出现从头跳回第一位时的突兀感。
+  * @brief   流水灯花样引擎实现
+  ******************************************************************************
+  * 时间基准用的是 HAL_GetTick()，也就是 SysTick 每 1ms 加 1 的计数器，
+  * 由系统时钟保证精度，和编译器优化等级、CPU 主频都没有关系
+  * （这正是原代码 "delay(24000000)" 空循环延时最致命的地方：
+  *   换一个优化等级或换一颗晶振，1 秒就变成 0.3 秒或 3 秒）。
   ******************************************************************************
   */
 
 /* Includes ------------------------------------------------------------------*/
 #include "led_effect.h"
-#include "stm32f4xx_hal.h"
+#include "bsp_led.h"
+
+/* Private typedef -----------------------------------------------------------*/
+/* 一种花样 = 一张帧表 + 节拍 + 帧数 */
+typedef struct
+{
+  const uint8_t *frames;       /* 帧表：每一项是 8 颗灯的图案             */
+  uint8_t        frame_num;    /* 帧数                                    */
+  uint16_t       interval_ms;  /* 每帧停留时间（毫秒）                    */
+} LedFxDef_t;
 
 /* Private define ------------------------------------------------------------*/
-#define LED_COUNT        8u          /* PF0~PF7 共 8 个 LED */
-#define LED_STEP_MS      120u        /* 每个灯停留时间（毫秒） */
-#define LED_PORT         GPIOF
-#define LED_ALL_MASK     0x00FFu     /* 只操作 PF0~PF7，不碰同端口其他引脚 */
+/* 帧表长度（由编译器按数组大小自动算出，增删帧不用改代码） */
+#define FX_FRAME_NUM(array)   ((uint8_t)(sizeof(array) / sizeof((array)[0])))
 
 /* Private variables ---------------------------------------------------------*/
-static uint8_t  s_index;             /* 当前点亮的 LED 序号 0~7 */
-static int8_t   s_step;              /* 移动方向：+1 向右，-1 向左 */
-static uint32_t s_last_tick;         /* 上一次推进的时间戳 */
+/* 四种花样的帧表：bit0 = LED1(PF0) … bit7 = LED8(PF7) */
+static const uint8_t s_fx_single_run[] =
+{
+  0x01U, 0x02U, 0x04U, 0x08U, 0x10U, 0x20U, 0x40U, 0x80U
+};
+
+/* 往复：去程 8 帧 + 回程 6 帧（首尾不重复，视觉上才连贯） */
+static const uint8_t s_fx_pingpong[] =
+{
+  0x01U, 0x02U, 0x04U, 0x08U, 0x10U, 0x20U, 0x40U, 0x80U,
+  0x40U, 0x20U, 0x10U, 0x08U, 0x04U, 0x02U
+};
+
+/* 累积：每帧多亮一颗，最后一帧全亮 */
+static const uint8_t s_fx_accumulate[] =
+{
+  0x01U, 0x03U, 0x07U, 0x0FU, 0x1FU, 0x3FU, 0x7FU, 0xFFU
+};
+
+/* 奇偶交替：10101010 / 01010101 */
+static const uint8_t s_fx_alternate[] =
+{
+  0xAAU, 0x55U
+};
+
+/* 花样总表：顺序必须与 LedEffect_t 枚举一致 */
+static const LedFxDef_t s_fx_table[LED_FX_COUNT] =
+{
+  { s_fx_single_run, FX_FRAME_NUM(s_fx_single_run), 250U },
+  { s_fx_pingpong,   FX_FRAME_NUM(s_fx_pingpong),   200U },
+  { s_fx_accumulate, FX_FRAME_NUM(s_fx_accumulate), 180U },
+  { s_fx_alternate,  FX_FRAME_NUM(s_fx_alternate),  400U }
+};
+
+/* 运行状态 */
+static uint8_t  s_cur_fx   = 0U;   /* 当前花样序号     */
+static uint8_t  s_frame    = 0U;   /* 当前播放到第几帧 */
+static uint8_t  s_cycle    = 0U;   /* 当前花样已循环几遍 */
+static uint32_t s_last_ms  = 0U;   /* 上一帧的显示时刻 */
 
 /* Private functions ---------------------------------------------------------*/
 
 /**
-  * @brief  只点亮序号为 index 的 LED，其余熄灭
-  * @note   BSRR 低 16 位写 1 → 输出高（LED 灭）；高 16 位写 1 → 输出低（LED 亮）
+  * @brief  载入一种花样并立即显示它的第一帧
+  * @param  fx：花样序号
+  * @retval 无
   */
-static void led_show_only(uint8_t index)
+static void LedEffect_Load(uint8_t fx)
 {
-  uint32_t lit = (uint32_t)(1u << index) & LED_ALL_MASK;   /* 要亮的位 */
-  uint32_t off = LED_ALL_MASK & ~lit;                      /* 要灭的位 */
+  const LedFxDef_t *def;
 
-  LED_PORT->BSRR = off | (lit << 16u);
+  s_cur_fx = (uint8_t)(fx % (uint8_t)LED_FX_COUNT);
+  def      = &s_fx_table[s_cur_fx];
+
+  s_frame = 0U;
+  s_cycle = 0U;
+
+  /* 让第一帧在下次调用 Task 时立即生效：把 "上次时刻" 往前推一个节拍。
+     无符号数溢出是良性的（now - s_last_ms 依旧等于 interval_ms）。 */
+  s_last_ms = HAL_GetTick() - def->interval_ms;
 }
 
 /* Exported functions --------------------------------------------------------*/
 
 /**
-  * @brief  初始化流水灯状态：全部熄灭，指针回到第一个 LED
+  * @brief  初始化花样引擎
+  * @retval 无
   */
-void LED_Effect_Init(void)
+void LedEffect_Init(void)
 {
-  s_index     = 0u;
-  s_step      = 1;
-  s_last_tick = HAL_GetTick();
-
-  /* 全部置高，上电先全灭，避免上电瞬间乱亮 */
-  LED_PORT->BSRR = LED_ALL_MASK;
+  LedEffect_Load((uint8_t)LED_FX_DEFAULT_INDEX);
 }
 
 /**
-  * @brief  流水灯任务：非阻塞，没到时间片立即返回
+  * @brief  花样引擎任务：必须在主循环中反复调用
+  * @note   函数内部没有任何阻塞等待，正常情况下几个指令周期就返回
+  * @retval 无
   */
-void LED_Effect_Task(void)
+void LedEffect_Task(void)
 {
-  uint32_t now = HAL_GetTick();
+  const LedFxDef_t *def;
+  uint32_t now;
 
-  /* 还没到时间片就直接返回，不阻塞主循环 */
-  if ((now - s_last_tick) < LED_STEP_MS)
+  def = &s_fx_table[s_cur_fx];
+  now = HAL_GetTick();
+
+  /* 还没到下一帧的时间，直接返回（这就是 "非阻塞" 的全部秘密） */
+  if ((uint32_t)(now - s_last_ms) < (uint32_t)def->interval_ms)
   {
     return;
   }
-  s_last_tick = now;
 
-  led_show_only(s_index);
+  /* 用 "上一次时刻 + 节拍" 递推，而不是 "now"，可以消除每帧的微小误差累积 */
+  s_last_ms += def->interval_ms;
 
-  /* 推进指针：到两端后掉头，并立即向内走一步，避免端点被重复点亮 */
-  if (s_step > 0)
+  /* 如果程序被长时间打断（例如调试断点），重新对齐，避免补播一长串帧 */
+  if ((uint32_t)(now - s_last_ms) > 1000U)
   {
-    if (s_index >= (uint8_t)(LED_COUNT - 1u))
-    {
-      s_step  = -1;
-      s_index = (uint8_t)(LED_COUNT - 2u);
-    }
-    else
-    {
-      s_index++;
-    }
+    s_last_ms = now;
   }
-  else
+
+  /* 输出当前帧 */
+  LED_Write(def->frames[s_frame]);
+
+  /* 帧游标后移，播完一轮后判断是否需要切换花样 */
+  s_frame++;
+  if (s_frame >= def->frame_num)
   {
-    if (s_index == 0u)
+    s_frame = 0U;
+    s_cycle++;
+
+#if (LED_FX_AUTO_CYCLE == 1)
+    if (s_cycle >= LED_FX_DWELL_CYCLES)
     {
-      s_step  = 1;
-      s_index = 1u;
+      LedEffect_Load((uint8_t)((s_cur_fx + 1U) % (uint8_t)LED_FX_COUNT));
     }
-    else
-    {
-      s_index--;
-    }
+#endif
   }
 }
+
+/**
+  * @brief  手动切换到指定花样（例如由按键触发）
+  * @param  fx：花样序号，超出范围会自动取模
+  * @retval 无
+  */
+void LedEffect_Select(uint8_t fx)
+{
+  LedEffect_Load(fx);
+}
+
+/**
+  * @brief  查询当前花样序号
+  * @retval 花样序号（0 ~ LED_FX_COUNT-1）
+  */
+uint8_t LedEffect_Current(void)
+{
+  return s_cur_fx;
+}
+
+/**
+  * @brief  查询花样总数
+  * @retval 花样总数
+  */
+uint8_t LedEffect_Count(void)
+{
+  return (uint8_t)LED_FX_COUNT;
+}
+
+/************************ (C) COPYRIGHT *****END OF FILE****/
