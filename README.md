@@ -30,7 +30,8 @@ xcc-embed-202401-2411020054/
 │   ├── README.md          # 实验说明与结果记录
 │   ├── Core/              # 用户代码（main.c、gpio.c 等）
 │   ├── Drivers/           # CMSIS + STM32F4xx HAL 驱动库
-│   ├── Startup/           # 启动文件
+│   ├── Startup/           # 启动文件（GCC 版，CubeIDE 用）
+│   ├── MDK-ARM/           # Keil5 工程（.uvprojx + ARM 启动文件）
 │   ├── docs/              # 时序图与辅助脚本
 │   └── screenshots/       # 现象截图
 └── lab02_matrixkey/       # 实验二：3×4 矩阵键盘
@@ -46,13 +47,18 @@ xcc-embed-202401-2411020054/
 
 ## 四、单个实验文件夹的内容约定
 
-每个 `labXX_名称` 文件夹是一个**完整的 STM32CubeIDE 工程**（含 `.ioc`、`.cproject`），
-可直接导入 CubeIDE 编译下载；除此之外固定包含：
+每个 `labXX_名称` 文件夹是一个**完整工程**，同时提供两套 IDE 的工程文件：
+
+- Keil MDK 5：双击 `MDK-ARM/xxx.uvprojx` 直接编译下载；
+- STM32CubeIDE：以 `.ioc` + `.cproject` 导入后编译下载（`MDK-ARM` 目录已在 `.cproject` 中排除，不会参与 CubeIDE 构建）。
+
+除此之外固定包含：
 
 | 路径 | 存放内容 |
 | --- | --- |
 | `README.md` | 实验目的、原理、关键代码、实验结果与总结 |
 | `Core/`、`Drivers/`、`Startup/` | 工程源码与 HAL 驱动库 |
+| `MDK-ARM/` | Keil5 工程（`.uvprojx`、ARM 启动文件、工程说明） |
 | `screenshots/` | 开发板运行现象截图 |
 | `docs/` | 时序图、辅助脚本等补充材料 |
 

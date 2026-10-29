@@ -7,6 +7,9 @@
 build/
 Debug/
 *.uvgui*
+*.uvoptx
+MDK-ARM/Objects/
+MDK-ARM/Listings/
 # STM32CubeIDE
 */Debug/
 */Release/
