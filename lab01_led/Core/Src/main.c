@@ -2,16 +2,13 @@
 /**
   ******************************************************************************
   * @file           : main.c
-  * @brief          : Main program body
+  * @brief          : 实验一：LED 往返流水灯
   ******************************************************************************
   * @attention
   *
-  * Copyright (c) 2026 STMicroelectronics.
-  * All rights reserved.
-  *
-  * This software is licensed under terms that can be found in the LICENSE file
-  * in the root directory of this software component.
-  * If no LICENSE file comes with this software, it is provided AS-IS.
+  * 主循环只做一件事：调用 LED_Effect_Task()。
+  * 流水灯的节拍、方向、端口操作全部封装在 led_effect.c 里，
+  * 以后要加按键、串口打印等功能，直接往 while(1) 里加任务即可。
   *
   ******************************************************************************
   */
@@ -22,7 +19,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "led_effect.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -63,7 +60,6 @@ void SystemClock_Config(void);
   */
 int main(void)
 {
-
   /* USER CODE BEGIN 1 */
 
   /* USER CODE END 1 */
@@ -87,21 +83,15 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   /* USER CODE BEGIN 2 */
-
+  LED_Effect_Init();
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    uint8_t i;
-
-    /* LED1~LED8 逐位点亮，形成流水灯效果（LED 低电平点亮） */
-    for (i = 0; i < 8; i++)
-    {
-      GPIOF->ODR = ~(1U << i);   /* 仅第 i 位为 0，其余位为 1 */
-      delay(24000000);           /* 软件延时，约 1 秒 */
-    }
+    /* 非阻塞：没到时间片会立刻返回，不影响后面继续加任务 */
+    LED_Effect_Task();
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -156,18 +146,6 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
-/**
-  * @brief  软件延时函数，采用空循环方式实现（阻塞延时）
-  * @param  i：空循环次数，168MHz 主频下 i = 24000000 约为 1 秒
-  * @retval 无
-  */
-void delay(uint32_t i)
-{
-  while (i--)
-  {
-    __NOP();
-  }
-}
 
 /* USER CODE END 4 */
 
