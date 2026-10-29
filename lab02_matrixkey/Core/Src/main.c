@@ -2,16 +2,16 @@
 /**
   ******************************************************************************
   * @file           : main.c
-  * @brief          : 实验二：3×4 矩阵键盘 + BCD 显示
+  * @brief          : 3×4 矩阵键盘扫描 + 8421BCD 码显示
   ******************************************************************************
   * @attention
   *
-  * 主循环只做两件事：
-  *   1. 调 KEYPAD_GetKey() 取键值（非阻塞，没按键就立即返回）；
-  *   2. 有新键值时把它按 8421BCD 码显示到 PF0~PF7 的 LED 上。
+  * 硬件：行线 PE4~PE6（开漏输出），列线 PE0~PE3（上拉输入），
+  *       显示用 PF0~PF7 八颗 LED（低电平点亮）。
+  *       键值 K1~K12 按行优先编号：第 1 行 K1~K4、第 2 行 K5~K8、第 3 行 K9~K12。
   *
-  * 扫描、消抖、按键沿检测都封装在 keypad.c 里，
-  * 主循环里没有任何 HAL_Delay，后续要加串口输出、数码管等任务直接往下加即可。
+  * 结构：key 驱动（matrix_key.c）负责扫描与消抖，main 只处理"按下"事件，
+  *       两者都不阻塞，主循环可以继续挂载其它任务。
   *
   ******************************************************************************
   */
@@ -22,7 +22,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "keypad.h"
+#include "matrix_key.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -49,27 +49,29 @@
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
-static void display_bcd(uint8_t value);
+
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-#define DISPLAY_PORT   GPIOF
-#define DISPLAY_MASK   0x00FFu         /* PF0~PF7 接 LED，低电平点亮 */
-
 /**
-  * @brief  把 0~99 的数值按 8421BCD 码显示到 PF0~PF7
-  * @param  value 要显示的值（1~12 为键值）
-  * @note   PF0~PF3 显示个位，PF4~PF7 显示十位；一次 BSRR 写入，不会闪烁
+  * @brief  把键值以 8421BCD 码显示到 8 颗 LED 上
+  * @param  key：键值 0~12（0 表示不显示）
+  * @note   PF4~PF7 显示十位，PF0~PF3 显示个位；LED 低电平点亮。
+  *         用 BSRR 一次写完整口低 8 位，避免误改 PF8~PF15。
   */
-static void display_bcd(uint8_t value)
+static void KeyDisplay_Show(uint8_t key)
 {
-  uint32_t bcd = ((uint32_t)(value / 10u) << 4u) | (uint32_t)(value % 10u);
-  uint32_t lit = bcd & DISPLAY_MASK;                        /* 需要点亮的位 */
+  uint16_t bcd;
+  uint16_t lit;
+  uint16_t off;
 
-  DISPLAY_PORT->BSRR = (DISPLAY_MASK & ~lit) | (lit << 16u);
+  bcd = (uint16_t)(((key / 10U) << 4) | (key % 10U));   /* 十位放高 4 位，个位放低 4 位 */
+  lit = (uint16_t)(bcd & 0x00FFU);                       /* 1 = 点亮（输出低）           */
+  off = (uint16_t)(~lit & 0x00FFU);                      /* 1 = 熄灭（输出高）           */
+
+  GPIOF->BSRR = ((uint32_t)lit << 16) | (uint32_t)off;
 }
-
 /* USER CODE END 0 */
 
 /**
@@ -78,8 +80,8 @@ static void display_bcd(uint8_t value)
   */
 int main(void)
 {
+
   /* USER CODE BEGIN 1 */
-  uint8_t key;             /* 本次取到的键值，0 表示没有新按键 */
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -101,20 +103,25 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   /* USER CODE BEGIN 2 */
-  KEYPAD_Init();
-  display_bcd(0u);          /* 上电先清空显示 */
+  MatrixKey_Init();                     /* 释放所有行线               */
+  KeyDisplay_Show(MATRIX_KEY_NONE);     /* 上电先显示 0（8 颗灯全灭）  */
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    key = KEYPAD_GetKey();
+    uint8_t          key = MATRIX_KEY_NONE;
+    MatrixKeyEvent_t ev  = MatrixKey_GetEvent(&key);
 
-    if (key != KEYPAD_KEY_NONE)
+    /* 只有"消抖后的按下"才刷新显示，抖动和长按都不会重复触发 */
+    if (ev == MATRIX_KEY_EVT_DOWN)
     {
-      display_bcd(key);     /* 只有按下瞬间更新一次，按住不会反复刷新 */
+      KeyDisplay_Show(key);
     }
+
+    /* 默认每 1ms 扫描一次键盘（单次约 60~80µs，CPU 占用 < 10%），
+       没有 HAL_Delay() 阻塞，可以在这里继续添加其它任务 */
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -169,6 +176,17 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
+/*
+ * 键值分配（行优先，与实验板丝印 K1~K12 一致）：
+ *
+ *              PE0(COL0)  PE1(COL1)  PE2(COL2)  PE3(COL3)
+ *   PE4(ROW0)      1          2          3          4        <- K1 K2 K3 K4
+ *   PE5(ROW1)      5          6          7          8        <- K5 K6 K7 K8
+ *   PE6(ROW2)      9         10         11         12        <- K9 K10 K11 K12
+ *
+ * 显示：PF4~PF7 = 十位 BCD，PF0~PF3 = 个位 BCD，均为低电平点亮。
+ *       例如按下 K12 → 十位 1(PF4 亮) + 个位 2(PF1 亮)。
+ */
 
 /* USER CODE END 4 */
 

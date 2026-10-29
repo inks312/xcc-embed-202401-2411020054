@@ -65,9 +65,13 @@ void MX_GPIO_Init(void)
   HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
 
   /*Configure GPIO pins : PE4 PE5 PE6 */
+  /* 行线必须用"开漏输出"：
+     开漏写 1 时是高阻，只有写 0 才真正拉低，所以即使同时按下不同行的
+     两个键，也不会出现"一个输出拉高、另一个拉低"被按键短接的情况。
+     若用推挽输出，那种情况下两个引脚会直接对打，长期可能损坏 IO。 */
   GPIO_InitStruct.Pin = GPIO_PIN_4|GPIO_PIN_5|GPIO_PIN_6;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_OD;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
 
