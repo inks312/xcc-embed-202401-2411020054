@@ -2,12 +2,16 @@
 /**
   ******************************************************************************
   * @file           : main.c
-  * @brief          : 寄存器级（裸机）PF 口翻转 —— 不使用 HAL
+  * @brief          : 实验二：3×4 矩阵键盘 + BCD 显示
   ******************************************************************************
   * @attention
   *
-  * 说明：本文件不使用 HAL 初始化，因此 MCU 运行在复位默认时钟 HSI 16 MHz
-  *       （而非 SystemClock_Config 里的 168 MHz）。
+  * 主循环只做两件事：
+  *   1. 调 KEYPAD_GetKey() 取键值（非阻塞，没按键就立即返回）；
+  *   2. 有新键值时把它按 8421BCD 码显示到 PF0~PF7 的 LED 上。
+  *
+  * 扫描、消抖、按键沿检测都封装在 keypad.c 里，
+  * 主循环里没有任何 HAL_Delay，后续要加串口输出、数码管等任务直接往下加即可。
   *
   ******************************************************************************
   */
@@ -18,7 +22,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "keypad.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -45,11 +49,26 @@
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
-
+static void display_bcd(uint8_t value);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+#define DISPLAY_PORT   GPIOF
+#define DISPLAY_MASK   0x00FFu         /* PF0~PF7 接 LED，低电平点亮 */
+
+/**
+  * @brief  把 0~99 的数值按 8421BCD 码显示到 PF0~PF7
+  * @param  value 要显示的值（1~12 为键值）
+  * @note   PF0~PF3 显示个位，PF4~PF7 显示十位；一次 BSRR 写入，不会闪烁
+  */
+static void display_bcd(uint8_t value)
+{
+  uint32_t bcd = ((uint32_t)(value / 10u) << 4u) | (uint32_t)(value % 10u);
+  uint32_t lit = bcd & DISPLAY_MASK;                        /* 需要点亮的位 */
+
+  DISPLAY_PORT->BSRR = (DISPLAY_MASK & ~lit) | (lit << 16u);
+}
 
 /* USER CODE END 0 */
 
@@ -59,11 +78,8 @@ void SystemClock_Config(void);
   */
 int main(void)
 {
-
   /* USER CODE BEGIN 1 */
-  uint16_t i;                        /* 行扫描循环变量 */
-  uint16_t KeyVal = 0;               /* 键值：1~12，对应 3 行 4 列矩阵键盘 */
-  uint8_t  PreLine[3] = {2, 0, 1};   /* 循环变量 i 与键盘行号(0~2)的对应关系 */
+  uint8_t key;             /* 本次取到的键值，0 表示没有新按键 */
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -85,36 +101,20 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   /* USER CODE BEGIN 2 */
-
+  KEYPAD_Init();
+  display_bcd(0u);          /* 上电先清空显示 */
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    for (i = 0; i < 3; i++)
+    key = KEYPAD_GetKey();
+
+    if (key != KEYPAD_KEY_NONE)
     {
-      /* 读取列线 PE0~PE3，不全为高说明有键按下 */
-      if ((GPIOE->IDR & 0x0F) != 0x0F)
-      {
-        HAL_Delay(16);                              /* 软件消抖 16ms */
-        if ((GPIOE->IDR & 0x0F) != 0x0F)            /* 复测仍按下，确认为有效按键 */
-        {
-          switch (GPIOE->IDR & 0x0F)                /* 哪一列为低，就是哪一列被按下 */
-          {
-            case 0x0E: KeyVal = 4 * PreLine[i] + 1; break;
-            case 0x0D: KeyVal = 4 * PreLine[i] + 2; break;
-            case 0x0B: KeyVal = 4 * PreLine[i] + 3; break;
-            case 0x07: KeyVal = 4 * PreLine[i] + 4; break;
-            default  : break;
-          }
-        }
-      }
-      /* 将第 i 行(PE4~PE6)输出低电平，下一次循环读取的就是这一行 */
-      GPIOE->ODR = ~(1 << (i + 4));
+      display_bcd(key);     /* 只有按下瞬间更新一次，按住不会反复刷新 */
     }
-    /* 键值以 8421BCD 码显示：PF4~PF7 为十位，PF0~PF3 为个位（LED 低电平点亮） */
-    GPIOF->ODR = ~((KeyVal / 10 << 4) + KeyVal % 10);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
